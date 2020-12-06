@@ -11,25 +11,32 @@ library(matlib)
 library(sp)
 library(raster)
 
-path <- "C:/Users/Vikram/Desktop/ce678/marine-gravity/data"   # add the path to your dataset folder here 
-df = NULL
-newlist <- list.files(path)
-for (i in seq_along(newlist)){
-  nc <- nc_open(file.path(path,newlist[i]))
-  lat <- ncvar_get(nc, "glat.00")
-  lon <- ncvar_get(nc, "glon.00")
-  ssh <- ncvar_get(nc, "ssh.33")
-  jdn <- ncvar_get(nc, "jday.00")
-  date<-as.Date(jdn+0.5, origin=as.Date("2000-01-01"))
-  cycleNo <- ncatt_get(nc, 0, "cycle")
-  passNo <- ncatt_get(nc, 0, "pass_number")
-  size <- dim(ssh)
-  nc_close(nc)
-  rbind(df, data.frame(lat, lon, ssh, jdn, date, size, cycleNo, passNo))->df
-}
-names(df)[c(8,10)]<-c("cycleNo", 'passNo')
-df[,c(6,7,9)]<-NULL # some unwated inclusions
+path <- "C:/Users/Vikram/Desktop/ce678/marine-gravity/data"   # add the path to your dataset folder here
+# path <- "C:/Users/Vikram/Documents/data_jason2/all"
 
+read_input <- function(file_name){
+  df = NULL
+  newlist <- list.files(file_name)
+  for (i in seq_along(newlist)){
+    nc <- nc_open(file.path(file_name,newlist[i]))
+    lat <- ncvar_get(nc, "glat.00")
+    lon <- ncvar_get(nc, "glon.00")
+    ssh <- ncvar_get(nc, "ssh.33")
+    jdn <- ncvar_get(nc, "jday.00")
+    date<-as.Date(jdn+0.5, origin=as.Date("2000-01-01"))
+    cycleNo <- ncatt_get(nc, 0, "cycle")
+    passNo <- ncatt_get(nc, 0, "pass_number")
+    size <- dim(ssh)
+    nc_close(nc)
+    rbind(df, data.frame(lat, lon, ssh, jdn, date, size, cycleNo, passNo))->df
+  }
+  names(df)[c(8,10)]<-c("cycleNo", 'passNo')
+  df[,c(6,7,9)]<-NULL # some unwated inclusions
+  
+  return(df)
+}
+
+df <- read_input(path)
 ggplot()+geom_point(data = df, aes(lon, lat), color="blue") #to visualise the data 
 
 # group the readings by pass number and then group them cycle wise for each pass
@@ -49,20 +56,21 @@ other_cyc <- lapply(byCycle, function(z){
   other <- z[-inds];other
 })
 
+
 # Now lets find the pair of points close to each other
 
 pairs <- NULL
 
-for (i in 1:length(ref.cyc)){
-  for (j in 1:length(other.cyc[[i]])){
-    dist_mat <- distm(matrix(c(ref.cyc[[i]]$lon, ref.cyc[[i]]$lat), ncol=2), matrix(c(other.cyc[[i]][[j]]$lon, other.cyc[[i]][[j]]$lat), ncol=2), fun=distGeo)/1000
+for (i in 1:length(ref_cyc)){
+  for (j in 1:length(other_cyc[[i]])){
+    dist_mat <- distm(matrix(c(ref_cyc[[i]]$lon, ref_cyc[[i]]$lat), ncol=2), matrix(c(other_cyc[[i]][[j]]$lon, other_cyc[[i]][[j]]$lat), ncol=2), fun=distGeo)/1000
     # filter based on the dist_mat
-    lat<- other.cyc[[i]][[j]]$lat[max.col(-dist_mat)]
-    lon<- other.cyc[[i]][[j]]$lon[max.col(-dist_mat)]
-    jdn<- other.cyc[[i]][[j]]$jdn[max.col(-dist_mat)]
-    ssh<- other.cyc[[i]][[j]]$ssh[max.col(-dist_mat)]
-    cycleNo <- other.cyc[[i]][[j]]$cycleNo[max.col(-dist_mat)]
-    passNo <- other.cyc[[i]][[j]]$passNo[max.col(-dist_mat)]
+    lat<- other_cyc[[i]][[j]]$lat[max.col(-dist_mat)]
+    lon<- other_cyc[[i]][[j]]$lon[max.col(-dist_mat)]
+    jdn<- other_cyc[[i]][[j]]$jdn[max.col(-dist_mat)]
+    ssh<- other_cyc[[i]][[j]]$ssh[max.col(-dist_mat)]
+    cycleNo <- other_cyc[[i]][[j]]$cycleNo[max.col(-dist_mat)]
+    passNo <- other_cyc[[i]][[j]]$passNo[max.col(-dist_mat)]
     
     rbind(pairs, data.frame(lon, lat, ssh, jdn, cycleNo, passNo))->pairs
   }
@@ -74,6 +82,8 @@ pair_points_byCycle <- lapply(pair_points_byPass, function(x){
   a <- x %>% group_by(cycleNo)
   a<- group_split(a)
 })
+
+# pair_points_byCycle <- lapply(pair_points_byCycle, function(x) {lapply(x, function(y){unique(y)})})
 
 # Grouping all the common points to find their time series
 
@@ -93,7 +103,7 @@ for (i in 1:length(pair_points_byCycle)){
 # plotting point pairs for tenth pass 
 visualise <- final.pairs[[10]]  # for checking 
 
-ggplot()+geom_point(data = graph_test[["1"]], aes(lon, lat), color="red")+
+ggplot()+geom_point(data = visualise[["1"]], aes(lon, lat), color="red")+
   geom_point(data = visualise[["2"]], aes(lon, lat), color="blue")+
   geom_point(data = visualise[["3"]], aes(lon, lat), color="black")+
   geom_point(data = visualise[["4"]], aes(lon, lat), color="orange")+
@@ -105,7 +115,7 @@ ggplot()+geom_point(data = graph_test[["1"]], aes(lon, lat), color="red")+
 
 
 
-new_df <- list()
+new_df =  NULL
 
 # length(final.pairs)
 
@@ -141,7 +151,6 @@ for (i in 1:length(final.pairs)){
     eta <- X[1]
     zeta <- X[2]
     rbind(new_df, data.frame(lon=mean_lon, lat=mean_lat, ssh=mean_ssh, eta, zeta)) -> new_df
-    
   }
 }
 
@@ -173,6 +182,7 @@ var_zeta <- variogram(zeta~1, data = new_df, cloud = FALSE)
 
 # to fit.variogram() via the vgm() function
 dat_fit_zeta <- fit.variogram(var_zeta, vgm(c("Exp", "Mat", "Sph")))
+
 # The following plot allows us to assess the fit
 plot(var_zeta, dat_fit_zeta)
 
@@ -183,19 +193,33 @@ zeta_krg <- krige(f1, new_df, grd, dat_fit_zeta)
 var_eta <- variogram(eta~1, data=new_df, cloud=FALSE)
 dat_fit_eta <- fit.variogram(var_eta,  vgm(c("Exp", "Mat", "Sph")))
 plot(var_eta, dat_fit_eta) # to visualise the fit 
-f2 <- as.formula(eta~lon + lat)
 
+f2 <- as.formula(eta~lon + lat)
 eta_krg <- krige(f2, new_df, grd, dat_fit_eta)
 
 interpolated_grd <- data.frame(grd, zeta_krg@data, eta_krg@data)
 
 # interpolated_grd[,c("col num here")]<-NULL # some unwated inclusions
 
-colnames(interpolated_grd) <- c("lon", "lat", "Pred.Zeta", "Zeta.var", "Pred.Eta", "Eta.var")
+colnames(interpolated_grd) <- c("lon", "lat", "pred_zeta", "zeta.var", "pred_eta", "eta.var")
 
 ggplot()+geom_point(data = interpolated_grd, aes(lon, lat), color="black")+scale_y_continuous(breaks=seq(14, 20, 0.5))+
   scale_x_continuous(breaks=seq(64, 70, 0.5))
 
-# Now we need do the 2d fft to find out the gravity anomaly 
+# Now we need do the 2D FFT to find out the gravity anomaly 
 
+fft_eta <- fft(interpolated_grd$pred_eta)
+fft_zeta <- fft(interpolated_grd$pred_zeta)
+  
+# estimate normal gravity wrt GRS80 reference system 
 
+# using somigliana_pizetti equation to find normal gravity modified for GRS80
+
+gamma = 9.780327*(1+0.0053024*(sin(lon))^2 - 0.0000058*(sin(2*interpolated_grd$lon))^2)
+kx <- 1
+ky <- 2
+
+f_delta_G <- -(0+1i)*2*3.142*(kx*fft_eta+ky*fft_zeta)/sqrt(kx^2 + ky^2)
+
+gelta_g <- fft(f_delta_G, inverse=TRUE) / length(f_delta_G)
+ 
